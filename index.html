@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IBKR Portfolio Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f9f9f8; --surface: #ffffff; --surface2: #f2f2f0;
+    --border: rgba(0,0,0,0.09); --border2: rgba(0,0,0,0.15);
+    --text: #1a1a1a; --text2: #6b7280; --text3: #9ca3af;
+    --green: #16a34a; --red: #dc2626; --blue: #2563eb;
+    --radius: 10px; --radius-lg: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111110; --surface: #1c1c1a; --surface2: #242422;
+      --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.15);
+      --text: #f0f0ee; --text2: #9ca3af; --text3: #6b7280;
+    }
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; }
+  #app { max-width: 1200px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 2px; }
+  .subtitle { color: var(--text2); font-size: 13px; margin-bottom: 2rem; }
+
+  .upload-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 3rem 2rem; text-align: center; }
+  .upload-zone { border: 1.5px dashed var(--border2); border-radius: var(--radius); padding: 2rem; cursor: pointer; transition: background .15s; margin-bottom: 1.5rem; }
+  .upload-zone:hover, .upload-zone.over { background: var(--surface2); }
+  .upload-icon { font-size: 32px; margin-bottom: .75rem; color: var(--text3); }
+  .upload-title { font-weight: 600; margin-bottom: .35rem; }
+  .upload-hint { font-size: 12px; color: var(--text2); margin-bottom: 1.25rem; }
+  .btn-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .how-to { text-align: left; background: var(--surface2); border-radius: var(--radius); padding: 1rem 1.25rem; margin-top: 1.5rem; }
+  .how-to h3 { font-size: 13px; font-weight: 600; margin-bottom: .5rem; }
+  .how-to p { font-size: 12px; color: var(--text2); line-height: 1.9; }
+  .err-bar { margin-top: 1rem; padding: .75rem 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius); font-size: 13px; color: var(--red); display: none; }
+  @media (prefers-color-scheme: dark) { .err-bar { background: #450a0a; border-color: #7f1d1d; } }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border: 1px solid var(--border2); border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 13px; font-weight: 500; cursor: pointer; transition: background .12s; white-space: nowrap; }
+  .btn:hover { background: var(--surface2); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .btn-primary:hover { opacity: .85; background: var(--text); }
+
+  #vdash { display: none; }
+  .dash-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; gap: 12px; flex-wrap: wrap; }
+
+  .cards-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+  .cards-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 1.5rem; }
+  .card { background: var(--surface2); border-radius: var(--radius); padding: 1rem 1.1rem; }
+  .card-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+  .card-val { font-size: 22px; font-weight: 600; }
+  .card-val2 { font-size: 16px; font-weight: 600; }
+  .card-sub { font-size: 11px; color: var(--text2); margin-top: 3px; }
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
+
+  .fetch-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .fetch-status { font-size: 12px; color: var(--text2); flex: 1; min-width: 0; }
+  .spinner { width: 14px; height: 14px; border: 2px solid var(--border2); border-top-color: var(--text); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .tab-strip { display: flex; gap: 3px; background: var(--surface2); padding: 3px; border-radius: var(--radius); width: fit-content; margin-bottom: 1.25rem; }
+  .tab { padding: 5px 14px; border: none; background: none; font-size: 13px; color: var(--text2); cursor: pointer; border-radius: 7px; font-weight: 500; transition: background .1s, color .1s; }
+  .tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .panel-pad { padding: 1.25rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text2); padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+  tfoot tr td { font-weight: 600; border-top: 1px solid var(--border2); border-bottom: none; }
+  .overflow-x { overflow-x: auto; }
+  .sym { font-weight: 600; }
+  .muted { color: var(--text2); }
+  .desc { color: var(--text2); font-size: 12px; }
+
+  /* Day change pill */
+  .pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .pill-up { background: #dcfce7; color: #15803d; }
+  .pill-dn { background: #fee2e2; color: #b91c1c; }
+  .pill-flat { background: var(--surface2); color: var(--text2); }
+  @media (prefers-color-scheme: dark) {
+    .pill-up { background: #14532d; color: #86efac; }
+    .pill-dn { background: #7f1d1d; color: #fca5a5; }
+    .t-buy { background: #14532d; color: #86efac; }
+    .t-sell { background: #7f1d1d; color: #fca5a5; }
+  }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 600; }
+  .t-buy { background: #dcfce7; color: #15803d; }
+  .t-sell { background: #fee2e2; color: #b91c1c; }
+
+  .chart-legend { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--text2); flex-wrap: wrap; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .chart-wrap { position: relative; height: 260px; margin-top: 1rem; }
+
+  @media (max-width: 700px) {
+    .cards-grid { grid-template-columns: repeat(2, 1fr); }
+    .cards-grid-3 { grid-template-columns: repeat(2, 1fr); }
+    .card-val { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="vup">
+    <h1>IBKR Portfolio Tracker</h1>
+    <p class="subtitle">Upload your IBKR Activity Statement to track average cost, FX conversions, and live SGD performance</p>
+    <div class="upload-card">
+      <div id="dz" class="upload-zone">
+        <div class="upload-icon">↑</div>
+        <p class="upload-title">Drop your IBKR Activity Statement CSV here</p>
+        <p class="upload-hint">Reports &amp; Tools → Statements → Activity → Format: CSV → Run &amp; Download</p>
+        <input type="file" id="fi" accept=".csv" style="display:none">
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="document.getElementById('fi').click()">Choose file</button>
+          <button class="btn" onclick="loadSample()">Try sample data</button>
+        </div>
+      </div>
+      <div class="how-to">
+        <h3>How to export from IBKR</h3>
+        <p>
+          1. Log in to IBKR Client Portal<br>
+          2. Go to <strong>Reports &amp; Tools → Statements → Activity</strong><br>
+          3. Set date range to your full account history, Format: <strong>CSV</strong>, Sections: All<br>
+          4. Click Run, download the .csv file, and upload it above
+        </p>
+      </div>
+      <div id="err" class="err-bar"></div>
+    </div>
+  </div>
+
+  <div id="vdash">
+    <div class="dash-header">
+      <div>
+        <h1>IBKR Portfolio</h1>
+        <p class="subtitle" id="lperiod"></p>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnfetch" onclick="doFetch()">Fetch live prices</button>
+        <button class="btn" onclick="goUp()">Upload new file</button>
+      </div>
+    </div>
+
+    <div class="cards-grid">
+      <div class="card"><p class="card-label">Total SGD deposited</p><p class="card-val" id="ci">—</p></div>
+      <div class="card"><p class="card-label">SGD in equities</p><p class="card-val" id="ceq">—</p></div>
+      <div class="card"><p class="card-label">Current SGD value</p><p class="card-val" id="cv">—</p><p class="card-sub" id="cvn">fetch prices to update</p></div>
+      <div class="card"><p class="card-label">Overall return</p><p class="card-val" id="cret">—</p><p class="card-sub" id="cretn">fetch prices to update</p></div>
+    </div>
+    <div class="cards-grid-3">
+      <div class="card"><p class="card-label">SGD cash remaining</p><p class="card-val2" id="ccash">—</p></div>
+      <div class="card"><p class="card-label">Blended SGD/USD rate</p><p class="card-val2" id="crate">—</p></div>
+      <div class="card"><p class="card-label">Live USD/SGD rate</p><p class="card-val2" id="clive" style="color:var(--text2);font-size:13px;padding-top:2px">fetch prices to update</p></div>
+    </div>
+
+    <div class="fetch-bar">
+      <div class="spinner" id="spinner"></div>
+      <span class="fetch-status" id="fstatus">Click "Fetch live prices" to get current ETF prices and SGD valuations.</span>
+    </div>
+
+    <div class="tab-strip">
+      <button class="tab active" id="tb-ov" onclick="setTab('ov')">Overview</button>
+      <button class="tab" id="tb-ho" onclick="setTab('ho')">Holdings</button>
+      <button class="tab" id="tb-tx" onclick="setTab('tx')">Transactions</button>
+      <button class="tab" id="tb-fx" onclick="setTab('fx')">FX history</button>
+    </div>
+
+    <div id="t-ov">
+      <div class="panel panel-pad">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <p style="font-weight:600;font-size:13px">SGD deposits over time</p>
+          <div class="chart-legend">
+            <span style="display:flex;align-items:center;gap:5px"><span class="legend-dot" style="background:rgba(37,99,235,.4)"></span>Each deposit</span>
+            <span style="display:flex;align-items:center;gap:5px"><span class="legend-dot" style="background:#2563eb"></span>Cumulative</span>
+          </div>
+        </div>
+        <div class="chart-wrap"><canvas id="ch"></canvas></div>
+      </div>
+    </div>
+
+    <div id="t-ho" style="display:none">
+      <div class="panel overflow-x">
+        <table>
+          <thead><tr>
+            <th>Symbol</th>
+            <th>Description</th>
+            <th style="text-align:right">Shares</th>
+            <th style="text-align:right">Avg price</th>
+            <th style="text-align:right">Live price</th>
+            <th style="text-align:right">Day's change</th>
+            <th style="text-align:right">Cost (USD)</th>
+            <th style="text-align:right">Cost (SGD)</th>
+            <th style="text-align:right">Value (SGD)</th>
+            <th style="text-align:right">P&amp;L (SGD)</th>
+            <th style="text-align:right">Total return</th>
+          </tr></thead>
+          <tbody id="htb"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="t-tx" style="display:none">
+      <div class="panel overflow-x">
+        <table>
+          <thead><tr>
+            <th>Date</th><th>Type</th><th>Symbol</th>
+            <th style="text-align:right">Shares</th>
+            <th style="text-align:right">Price (USD)</th>
+            <th style="text-align:right">Proceeds (USD)</th>
+            <th style="text-align:right">Commission (USD)</th>
+          </tr></thead>
+          <tbody id="ttb"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="t-fx" style="display:none">
+      <div class="panel overflow-x">
+        <table>
+          <thead><tr>
+            <th>Date</th>
+            <th style="text-align:right">USD received</th>
+            <th style="text-align:right">SGD paid</th>
+            <th style="text-align:right">Rate (SGD/USD)</th>
+          </tr></thead>
+          <tbody id="fxtb"></tbody>
+          <tfoot id="fxfoot"></tfoot>
+        </table>
+      </div>
+      <p style="font-size:12px;color:var(--text2);margin-top:.75rem;line-height:1.7">IBKR AutoFX automatically converts SGD to USD when you buy USD-denominated ETFs. The fee is embedded in the spread — no explicit commission is charged.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const SAMPLE=`Statement,Header,Field Name,Field Value,,,,,,,,,,,,,
+Statement,Data,Period,"September 30, 2025 - April 3, 2026",,,,,,,,,,,,,
+Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price,C. Price,Proceeds,Comm/Fee,Basis,Realized P/L,MTM P/L,Code,
+Trades,Data,Order,Stocks,USD,SMH,"2025-11-20, 09:39:08",36,59.32,57.83,-2135.52,-4.36,2139.88,0,-53.64,IA;O,
+Trades,Data,Order,Stocks,USD,SMH,"2026-01-19, 09:30:47",24,68.65,68.91,-1647.6,-1.9402,1649.5402,0,6.24,O,
+Trades,Data,Order,Stocks,USD,SMH,"2026-03-06, 08:57:19",5.9444,67.28917906,68.3,-399.995896,-1.853,401.848896,0,6.0066,IM;O;P,
+Trades,Data,Order,Stocks,USD,SMH,"2026-04-02, 08:10:28",3.7878,66,68.43,-249.9948,-1.9402,251.935,0,9.2044,O;P,
+Trades,SubTotal,,Stocks,USD,SMH,,69.7322,,,-4433.110696,-10.0934,4443.204096,0,-32.189,,
+Trades,Data,Order,Stocks,USD,SPYL,"2025-11-20, 09:37:16",150.6386,16.59600848,16.424,-2499.999483,-4.36,2504.359483,0,-25.9111,O;P,
+Trades,SubTotal,,Stocks,USD,SPYL,,150.6386,,,-2499.999483,-4.36,2504.359483,0,-25.9111,,
+Trades,Data,Order,Stocks,USD,VWRA,"2025-11-20, 08:23:57",36.3636,165,164.18,-5999.994,-4.36,6004.354,0,-29.8182,O;P,
+Trades,Data,Order,Stocks,USD,VWRA,"2026-03-06, 08:53:30",7,169.9214,170.36,-1189.45,-1.853,1191.303,0,3.07,O,
+Trades,SubTotal,,Stocks,USD,VWRA,,43.3636,,,-7189.444,-6.213,7195.657,0,-26.7482,,
+Trades,Total,,Stocks,USD,,,,,,-14122.55418,-20.6664,14143.22058,0,-84.8483, ,
+Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price,,Proceeds,Comm in SGD,,,MTM in SGD,Code,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2025-11-20, 08:23:58",4,1.30842,,-5.23368,0,,,-0.00248,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2025-11-20, 08:23:58",5940.36,1.30805,,-7770.287898,0,,,-1.48509,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2025-11-20, 09:37:16",4,1.30672,,-5.22688,0,,,0.00432,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2025-11-20, 09:37:17",2500.35,1.30635,,-3266.332223,0,,,3.625507,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2025-11-20, 09:39:09",2135.88,1.30645,,-2790.420426,0,,,2.883438,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2025-11-20, 09:39:09",4,1.30682,,-5.22728,0,,,0.00392,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2025-11-20, 11:10:28",60,1.3075,,-78.45,0,,,0.018,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2026-01-19, 09:30:47",1.78,1.28542,,-2.2880476,0,,,-0.001104,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2026-01-19, 09:30:48",1647.77,1.28524,,-2117.779915,0,,,-0.725019,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2026-03-06, 08:53:31",1.7,1.28223,,-2.179791,0,,,-0.005151,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2026-03-06, 08:53:31",1189.61,1.28184,,-1524.889682,0,,,-3.14057,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2026-03-06, 08:57:20",269.26,1.28224,,-345.2559424,0,,,-0.81855,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2026-03-06, 08:57:20",67.28,1.28219,,-86.2657432,0,,,-0.201167,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2026-03-06, 08:57:21",63.59,1.28219,,-81.5344621,0,,,-0.190134,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2026-04-02, 08:10:28",1.78,1.28797,,-2.2925866,0,,,-0.004041,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2026-04-02, 08:10:29",198.16,1.28763,,-255.1567608,0,,,-0.382449,AFx,
+Trades,Data,Order,Forex,SGD,USD.SGD,"2026-04-02, 08:10:29",51.99,1.28763,,-66.9438837,0,,,-0.100341,AFx,
+Trades,SubTotal,,Forex,SGD,USD.SGD,,14143.22058,,,-18407.95929,0,,,-0.526754,,
+Financial Instrument Information,Header,Asset Category,Symbol,Description,Conid,Security ID,Underlying,Listing Exch,Multiplier,Type,Code,,,,,
+Financial Instrument Information,Data,Stocks,SMH,VANECK SEMICONDUCTOR ETF,458512500,IE00BMC38736,SMH,LSEETF,1,ETF,,,,,,
+Financial Instrument Information,Data,Stocks,SPYL,SPDR S&P 500 UCITS ETF ACC,663368035,IE000XZSV718,SPYL,LSEETF,1,ETF,,,,,,
+Financial Instrument Information,Data,Stocks,VWRA,VANG FTSE AW USDA,375855577,IE00BK5BQT80,VWRA,LSEETF,1,ETF,,,,,,
+Deposits & Withdrawals,Header,Currency,Settle Date,Description,Amount,,,,,,,,,,,
+Deposits & Withdrawals,Data,SGD,30/9/2025,Electronic Fund Transfer,100,,,,,,,,,,,
+Deposits & Withdrawals,Data,SGD,11/10/2025,Electronic Fund Transfer,13000,,,,,,,,,,,
+Deposits & Withdrawals,Data,SGD,20/11/2025,Electronic Fund Transfer,1000,,,,,,,,,,,
+Deposits & Withdrawals,Data,SGD,19/1/2026,Electronic Fund Transfer,2000,,,,,,,,,,,
+Deposits & Withdrawals,Data,SGD,25/2/2026,Electronic Fund Transfer,2000,,,,,,,,,,,
+Deposits & Withdrawals,Data,SGD,2/4/2026,Electronic Fund Transfer,1000,,,,,,,,,,,
+Deposits & Withdrawals,Data,Total,,,19100,,,,,,,,,,,`;
+
+let ST = { data:null, h:null, descs:{}, rate:1.3, pr:null, chart:null };
+
+function csvRow(line) {
+  const r=[]; let c='', q=false;
+  for (let i=0;i<line.length;i++) {
+    const ch=line[i];
+    if (ch==='"') q=!q;
+    else if (ch===',' && !q) { r.push(c.trim()); c=''; }
+    else c+=ch;
+  }
+  r.push(c.trim()); return r;
+}
+function pN(s) { if (!s||s==='--'||s==='-') return 0; return parseFloat(String(s).replace(/,/g,''))||0; }
+function pDate(s) {
+  s=(s||'').trim();
+  const dd=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dd) return `${dd[3]}-${dd[2].padStart(2,'0')}-${dd[1].padStart(2,'0')}`;
+  return s.substring(0,10);
+}
+
+function parseIBKR(txt) {
+  txt=txt.replace(/^\uFEFF/,'');
+  const lines=txt.split('\n').map(l=>l.replace(/\r/g,''));
+  const deps=[], stocks=[], descs={};
+  let fxByDate={};
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const c=csvRow(line); if (c.length<3) continue;
+    const sec=c[0], rt=c[1]; if (rt!=='Data') continue;
+    if (sec==='Deposits & Withdrawals') {
+      const amt=pN(c[5]);
+      if (c[2]==='SGD' && c[3] && c[3]!=='Total' && amt>0) deps.push({date:pDate(c[3]),amt});
+    }
+    if (sec==='Financial Instrument Information' && c[3] && c[4]) descs[c[3]]=c[4];
+    if (sec==='Trades') {
+      if (c[3]==='Stocks') {
+        const sym=c[5], date=(c[6]||'').split(',')[0].trim();
+        const qty=pN(c[7]), price=pN(c[8]);
+        const proceeds=Math.abs(pN(c[10])), comm=Math.abs(pN(c[11]));
+        if (sym && qty!==0) stocks.push({date,sym,qty,price,proceeds,comm});
+      }
+      if (c[3]==='Forex' && (c[5]||'').includes('SGD')) {
+        const date=(c[6]||'').split(',')[0].trim().substring(0,10);
+        const usd=pN(c[7]), sgd=Math.abs(pN(c[10]));
+        if (usd>0.001 && sgd>0.001) {
+          if (!fxByDate[date]) fxByDate[date]={date,usd:0,sgd:0};
+          fxByDate[date].usd+=usd; fxByDate[date].sgd+=sgd;
+        }
+      }
+    }
+  }
+  return { deps, stocks, forex:Object.values(fxByDate).sort((a,b)=>a.date.localeCompare(b.date)), descs };
+}
+
+function calcHoldings(stocks) {
+  const map={};
+  for (const t of [...stocks].sort((a,b)=>a.date.localeCompare(b.date))) {
+    if (!map[t.sym]) map[t.sym]={sym:t.sym,shares:0,costUSD:0,trades:[]};
+    const h=map[t.sym];
+    if (t.qty>0) { h.costUSD+=t.proceeds+t.comm; h.shares+=t.qty; }
+    else { const avg=h.shares>0?h.costUSD/h.shares:0; h.shares+=t.qty; h.costUSD=Math.max(0,h.shares*avg); }
+    h.trades.push(t);
+  }
+  return Object.fromEntries(Object.entries(map).filter(([,h])=>h.shares>0.0001).map(([k,h])=>[k,{...h,avgUSD:h.shares>0?h.costUSD/h.shares:0}]));
+}
+
+function process(txt) {
+  try {
+    const d=parseIBKR(txt);
+    if (!d.stocks.length && !d.deps.length) throw new Error('No trades or deposits found. Make sure this is an IBKR Activity Statement CSV.');
+    const h=calcHoldings(d.stocks);
+    const tu=d.forex.reduce((s,f)=>s+f.usd,0), ts=d.forex.reduce((s,f)=>s+f.sgd,0);
+    ST={data:d, h, descs:d.descs, rate:tu>0?ts/tu:1.3, pr:null, chart:ST.chart};
+    renderDash();
+  } catch(e) { showErr(e.message); }
+}
+
+function loadSample() { process(SAMPLE); }
+function showErr(msg) { const el=$('err'); el.textContent='Error: '+msg; el.style.display='block'; setTimeout(()=>el.style.display='none',10000); }
+function goUp() { $('vup').style.display='block'; $('vdash').style.display='none'; }
+const $=id=>document.getElementById(id);
+const fS=n=>'S$'+(+n||0).toLocaleString('en-SG',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fU=n=>'US$'+(+n||0).toLocaleString('en-SG',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fP=(n,d=2)=>(n>=0?'+':'')+n.toFixed(d)+'%';
+const pC=n=>n>=0?'pos':'neg';
+
+function changePill(pct) {
+  if (pct == null) return '<span class="muted">—</span>';
+  const cls = pct > 0.05 ? 'pill-up' : pct < -0.05 ? 'pill-dn' : 'pill-flat';
+  const sign = pct >= 0 ? '+' : '';
+  return `<span class="pill ${cls}">${sign}${pct.toFixed(2)}%</span>`;
+}
+
+function renderDash() {
+  $('vup').style.display='none'; $('vdash').style.display='block';
+  const {data,h,rate}=ST;
+  const allDates=[...data.stocks.map(t=>t.date),...data.deps.map(d=>d.date)].sort();
+  $('lperiod').textContent=allDates.length?(allDates[0]+' — '+allDates.at(-1)):'';
+  $('ci').textContent=fS(data.deps.reduce((s,d)=>s+d.amt,0));
+  $('ceq').textContent=fS(Object.values(h).reduce((s,x)=>s+x.costUSD,0)*rate);
+  $('ccash').textContent=fS(Math.max(0,data.deps.reduce((s,d)=>s+d.amt,0)-data.forex.reduce((s,f)=>s+f.sgd,0)));
+  $('crate').textContent=rate.toFixed(4)+' SGD/USD';
+  renderHoldings(); renderTx(); renderFX(); renderChart();
+}
+
+function updateValueCards() {
+  const {h,rate,pr}=ST; if (!pr) return;
+  const totalCostSGD=Object.values(h).reduce((s,x)=>s+x.costUSD,0)*rate;
+  let valUSD=0, n=0;
+  for (const x of Object.values(h)) { const p=pr.prices?.[x.sym]; if (p) { valUSD+=x.shares*p; n++; } }
+  if (!n) return;
+  const valSGD=valUSD*pr.usdSgd, pnl=valSGD-totalCostSGD, pct=totalCostSGD>0?(pnl/totalCostSGD)*100:0;
+  $('cv').textContent=fS(valSGD); $('cv').className='card-val '+pC(pnl);
+  $('cvn').textContent=(pnl>=0?'+':'')+fS(Math.abs(pnl))+' vs cost';
+  $('cret').textContent=fP(pct); $('cret').className='card-val '+pC(pct);
+  $('cretn').textContent='at 1 USD = '+pr.usdSgd.toFixed(4)+' SGD';
+  $('clive').textContent=pr.usdSgd.toFixed(4)+' SGD/USD';
+  $('clive').style.fontSize='16px'; $('clive').style.color='var(--text)';
+}
+
+function renderHoldings() {
+  const {h,descs,rate,pr}=ST;
+  const tbody=$('htb'); tbody.innerHTML='';
+  for (const x of Object.values(h)) {
+    const lp=pr?.prices?.[x.sym]||null;
+    const dayChg=pr?.changes?.[x.sym]??null;
+    const usdSgd=pr?.usdSgd||null;
+    const sgdCost=x.costUSD*rate;
+    const sgdVal=(lp&&usdSgd)?x.shares*lp*usdSgd:null;
+    const pnl=sgdVal!=null?sgdVal-sgdCost:null;
+    const pct=(pnl!=null&&sgdCost>0)?(pnl/sgdCost)*100:null;
+    const tr=document.createElement('tr');
+    tr.innerHTML=
+      `<td class="sym">${x.sym}</td>`+
+      `<td class="desc">${descs[x.sym]||'—'}</td>`+
+      `<td style="text-align:right">${x.shares.toFixed(4)}</td>`+
+      `<td style="text-align:right">${fU(x.avgUSD)}</td>`+
+      `<td style="text-align:right">${lp?fU(lp):'<span class="muted">—</span>'}</td>`+
+      `<td style="text-align:right">${changePill(dayChg)}</td>`+
+      `<td style="text-align:right">${fU(x.costUSD)}</td>`+
+      `<td style="text-align:right">${fS(sgdCost)}</td>`+
+      `<td style="text-align:right">${sgdVal!=null?fS(sgdVal):'<span class="muted">—</span>'}</td>`+
+      `<td style="text-align:right" class="${pnl!=null?pC(pnl):''}">${pnl!=null?(pnl>=0?'+':'-')+fS(Math.abs(pnl)):'<span class="muted">—</span>'}</td>`+
+      `<td style="text-align:right" class="${pct!=null?pC(pct):''}">${pct!=null?fP(pct):'<span class="muted">—</span>'}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderTx() {
+  const tbody=$('ttb'); tbody.innerHTML='';
+  for (const t of [...ST.data.stocks].sort((a,b)=>b.date.localeCompare(a.date))) {
+    const tr=document.createElement('tr');
+    tr.innerHTML=
+      `<td>${t.date}</td>`+
+      `<td><span class="tag ${t.qty>0?'t-buy':'t-sell'}">${t.qty>0?'BUY':'SELL'}</span></td>`+
+      `<td class="sym">${t.sym}</td>`+
+      `<td style="text-align:right">${Math.abs(t.qty).toFixed(4)}</td>`+
+      `<td style="text-align:right">${fU(t.price)}</td>`+
+      `<td style="text-align:right">${fU(t.proceeds)}</td>`+
+      `<td style="text-align:right;color:var(--text2)">${fU(t.comm)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderFX() {
+  const tbody=$('fxtb'), fxfoot=$('fxfoot'); tbody.innerHTML=''; fxfoot.innerHTML='';
+  let tu=0, ts=0;
+  for (const f of [...ST.data.forex].sort((a,b)=>b.date.localeCompare(a.date))) {
+    tu+=f.usd; ts+=f.sgd;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${f.date}</td><td style="text-align:right">${fU(f.usd)}</td><td style="text-align:right">${fS(f.sgd)}</td><td style="text-align:right">${(f.sgd/f.usd).toFixed(4)}</td>`;
+    tbody.appendChild(tr);
+  }
+  if (ST.data.forex.length) {
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>Total / blended rate</td><td style="text-align:right">${fU(tu)}</td><td style="text-align:right">${fS(ts)}</td><td style="text-align:right">${(ts/tu).toFixed(4)}</td>`;
+    fxfoot.appendChild(tr);
+  }
+}
+
+function renderChart() {
+  if (ST.chart) { ST.chart.destroy(); ST.chart=null; }
+  const deps=[...ST.data.deps].sort((a,b)=>a.date.localeCompare(b.date));
+  if (!deps.length) return;
+  const labels=[], amounts=[], cum=[]; let c=0;
+  for (const d of deps) { labels.push(d.date.substring(5)); amounts.push(d.amt); c+=d.amt; cum.push(c); }
+  const dk=matchMedia('(prefers-color-scheme: dark)').matches;
+  const gc=dk?'rgba(255,255,255,.07)':'rgba(0,0,0,.05)', tc=dk?'#9ca3af':'#6b7280';
+  ST.chart=new Chart($('ch').getContext('2d'), {
+    type:'bar',
+    data:{labels, datasets:[
+      {type:'bar',label:'Deposit',data:amounts,backgroundColor:'rgba(37,99,235,.4)',borderRadius:4,order:2},
+      {type:'line',label:'Cumulative',data:cum,borderColor:'#2563eb',backgroundColor:'transparent',borderWidth:2,pointRadius:5,pointBackgroundColor:'#2563eb',tension:.3,order:1}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.dataset.label}: S$${Math.round(c.parsed.y).toLocaleString()}`}}},
+      scales:{
+        x:{grid:{color:gc},ticks:{color:tc,font:{size:11},autoSkip:false,maxRotation:45}},
+        y:{grid:{color:gc},ticks:{color:tc,font:{size:11},callback:v=>'S$'+(v>=1000?(v/1000).toFixed(0)+'k':v)}}
+      }
+    }
+  });
+}
+
+function setTab(t) {
+  ['ov','ho','tx','fx'].forEach(x=>{$('t-'+x).style.display=x===t?'block':'none'; $('tb-'+x).classList.toggle('active',x===t);});
+}
+
+async function doFetch() {
+  if (!ST.h) return;
+  const btn=$('btnfetch'), spinner=$('spinner'), status=$('fstatus');
+  btn.disabled=true; spinner.style.display='block';
+  status.style.color='var(--text2)';
+  status.textContent='Fetching live prices for '+Object.keys(ST.h).join(', ')+'...';
+  try {
+    const syms=Object.keys(ST.h).join(',');
+    const res=await fetch(`/api/prices?symbols=${encodeURIComponent(syms)}`);
+    if (!res.ok) throw new Error('Server error '+res.status);
+    const pr=await res.json();
+    if (pr.error) throw new Error(pr.error);
+    if (!pr.usdSgd || !pr.prices) throw new Error('Unexpected response from server');
+    ST.pr=pr;
+    updateValueCards(); renderHoldings();
+    status.style.color='var(--green)';
+    status.textContent='Updated '+new Date().toLocaleTimeString('en-SG')+' · 1 USD = '+pr.usdSgd.toFixed(4)+' SGD · Prices from Yahoo Finance';
+    btn.textContent='Refresh prices';
+  } catch(e) {
+    status.style.color='var(--red)';
+    status.textContent='Failed: '+e.message;
+  }
+  btn.disabled=false; spinner.style.display='none';
+}
+
+$('fi').addEventListener('change', e=>{const f=e.target.files?.[0]; if (!f) return; const r=new FileReader(); r.onload=ev=>process(ev.target.result); r.readAsText(f);});
+const dz=$('dz');
+dz.addEventListener('dragover', e=>{e.preventDefault(); dz.classList.add('over');});
+dz.addEventListener('dragleave', ()=>dz.classList.remove('over'));
+dz.addEventListener('drop', e=>{e.preventDefault(); dz.classList.remove('over'); const f=e.dataTransfer.files?.[0]; if (!f) return; const r=new FileReader(); r.onload=ev=>process(ev.target.result); r.readAsText(f);});
+</script>
+</body>
+</html>
